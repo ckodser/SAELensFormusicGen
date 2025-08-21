@@ -319,6 +319,7 @@ class HookedProxyMG(HookedRootModule):
             resid_stream = resid_stream[:resid_stream.shape[0] // 2]
             resid_stream = resid_stream.reshape((-1, resid_stream.shape[-1]))[result]
             cache[hook_name] = resid_stream
+            del self.cur_tokens
 
         fwd_hooks = []
         bwd_hooks = []
