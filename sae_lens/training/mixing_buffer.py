@@ -22,9 +22,6 @@ def mixing_buffer(
         Batches of activations of shape (batch_size, *activation_dims)
     """
 
-    if buffer_size < batch_size:
-        raise ValueError("Buffer size must be greater than or equal to batch size")
-
     storage_buffer: torch.Tensor | None = None
 
     for new_activations in activations_loader:
