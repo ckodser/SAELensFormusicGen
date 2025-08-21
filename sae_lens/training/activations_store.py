@@ -664,7 +664,7 @@ class ActivationsStore:
             ).to(_get_model_device(self.model))
             refill_activations = self.get_activations(refill_batch_tokens)
             # move acts back to cpu
-            refill_activations.to(self.device)
+            refill_activations = refill_activations.to(self.device)
             new_buffer_activations = torch.cat([new_buffer_activations, refill_activations])
             # new_buffer_activations[
             #     refill_batch_idx_start : refill_batch_idx_start + batch_size, ...
