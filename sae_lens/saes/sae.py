@@ -848,6 +848,7 @@ class TrainingSAEConfig(SAEConfig, ABC):
         }
         result_dict["architecture"] = base_sae_cfg_class.architecture()
         result_dict["metadata"] = self.metadata.to_dict()
+        result_dict["dataset_path"] = ""
         return result_dict
 
 
