@@ -166,13 +166,14 @@ class LanguageModelSAETrainingRunner:
                 id=self.cfg.logger.wandb_id,
             )
 
-        evaluator = LLMSaeEvaluator(
-            model=self.model,
-            activations_store=self.activations_store,
-            eval_batch_size_prompts=self.cfg.eval_batch_size_prompts,
-            n_eval_batches=self.cfg.n_eval_batches,
-            model_kwargs=self.cfg.model_kwargs,
-        )
+        evaluator = None
+        # evaluator = LLMSaeEvaluator(
+        #     model=self.model,
+        #     activations_store=self.activations_store,
+        #     eval_batch_size_prompts=self.cfg.eval_batch_size_prompts,
+        #     n_eval_batches=self.cfg.n_eval_batches,
+        #     model_kwargs=self.cfg.model_kwargs,
+        # )
 
         trainer = SAETrainer(
             sae=self.sae,
