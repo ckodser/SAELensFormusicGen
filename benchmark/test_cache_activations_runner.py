@@ -6,7 +6,7 @@ from pathlib import Path
 
 import torch
 from safetensors.torch import save_file
-from tqdm import trange
+from tqdm.auto import trange
 
 from sae_lens.cache_activations_runner import CacheActivationsRunner
 from sae_lens.config import CacheActivationsRunnerConfig
