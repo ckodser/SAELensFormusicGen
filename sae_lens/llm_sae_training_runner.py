@@ -1,4 +1,5 @@
 import json
+import os
 import signal
 import sys
 from collections.abc import Sequence
@@ -252,6 +253,7 @@ class LanguageModelSAETrainingRunner:
             checkpoint_path = Path(self.cfg.checkpoint_path) / str(
                 trainer.n_training_samples
             )
+            os.makedirs(checkpoint_path, exist_ok=True)
             self.save_checkpoint(checkpoint_path)
             logger.info("done saving")
             raise
