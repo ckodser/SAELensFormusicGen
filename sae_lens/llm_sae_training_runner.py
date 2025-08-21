@@ -254,6 +254,10 @@ class LanguageModelSAETrainingRunner:
                 trainer.n_training_samples
             )
             os.makedirs(checkpoint_path, exist_ok=True)
+            trainer.save_checkpoint(
+                checkpoint_name=str(trainer.n_training_samples),
+                save_inference_model=True,
+            )
             self.save_checkpoint(checkpoint_path)
             logger.info("done saving")
             raise
