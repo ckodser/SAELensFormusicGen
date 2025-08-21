@@ -7,6 +7,7 @@ from collections.abc import Generator, Iterator, Sequence
 from typing import Any, Literal, cast
 
 import datasets
+import numpy as np
 import torch
 from datasets import Dataset, DatasetDict, IterableDataset, load_dataset
 from huggingface_hub import hf_hub_download
@@ -318,7 +319,7 @@ class ActivationsStore:
                 "Dataset is not tokenized. Pre-tokenizing will improve performance and allows for more control over special tokens. See https://jbloomaus.github.io/SAELens/training_saes/#pretokenizing-datasets for more info."
             )
 
-        self.iterable_sequences = self._iterate_tokenized_sequences()
+        self.iterable_sequences = self._iterate_tokenized_sequences(self.store_batch_size_prompts)
 
         self.cached_activation_dataset = self.load_cached_activation_dataset()
 
@@ -335,26 +336,43 @@ class ActivationsStore:
             yield row[self.tokens_column]  # type: ignore
             self.n_dataset_processed += 1
 
-    def _iterate_raw_dataset_tokens(self) -> Generator[torch.Tensor, None, None]:
+    def _iterate_raw_dataset_tokens(self, batch_size: int) -> Generator[torch.Tensor, None, None]:
         """
         Helper to create an iterator which tokenizes raw text from the dataset on the fly
         """
+        batch = []
         for row in self._iterate_raw_dataset():
-            tokens = (
-                self.model.to_tokens(
-                    row,
+            batch.append(row)
+            if len(batch) >= batch_size:
+                yield self.model.to_tokens(
+                    batch,
                     truncate=False,
                     move_to_device=False,  # we move to device below
                     prepend_bos=False,
-                )  # type: ignore
-                .squeeze(0)
-                .to(self.device)
-            )
-            if len(tokens.shape) != 1:
-                raise ValueError(f"tokens.shape should be 1D but was {tokens.shape}")
-            yield tokens
+                ).to(self.device)
+                batch.clear()
+                # tokens = (
+                #     self.model.to_tokens(
+                #         row,
+                #         truncate=False,
+                #         move_to_device=False,  # we move to device below
+                #         prepend_bos=False,
+                #     )  # type: ignore
+                #     .squeeze(0)
+                #     .to(self.device)
+                # )
+                # if len(tokens.shape) != 1:
+                #     raise ValueError(f"tokens.shape should be 1D but was {tokens.shape}")
+                # yield tokens
+        if batch:
+            yield self.model.to_tokens(
+                batch,
+                truncate=False,
+                move_to_device=False,  # we move to device below
+                prepend_bos=False,
+            ).to(self.device)
 
-    def _iterate_tokenized_sequences(self) -> Generator[torch.Tensor, None, None]:
+    def _iterate_tokenized_sequences(self, batch_size: int) -> Generator[torch.Tensor, None, None]:
         """
         Generator which iterates over full sequence of context_size tokens
         """
@@ -374,6 +392,9 @@ class ActivationsStore:
         else:
             tokenizer = getattr(self.model, "tokenizer", None)
             bos_token_id = None if tokenizer is None else tokenizer.bos_token_id
+
+            yield from self._iterate_raw_dataset_tokens(batch_size)
+            return
 
             yield from concat_and_batch_sequences(
                 tokens_iterator=self._iterate_raw_dataset_tokens(),
@@ -466,13 +487,22 @@ class ActivationsStore:
         """
         if not batch_size:
             batch_size = self.store_batch_size_prompts
+        while True:
+            try:
+                return next(self.iterable_sequences)
+            except StopIteration:
+                self.iterable_sequences = self._iterate_tokenized_sequences(batch_size)
+                if raise_at_epoch_end:
+                    raise StopIteration(
+                        f"Ran out of tokens in dataset after {self.n_dataset_processed} samples, beginning the next epoch."
+                    )
         sequences = []
         # the sequences iterator yields fully formed tokens of size context_size, so we just need to cat these into a batch
         for _ in range(batch_size):
             try:
                 sequences.append(next(self.iterable_sequences))
             except StopIteration:
-                self.iterable_sequences = self._iterate_tokenized_sequences()
+                self.iterable_sequences = self._iterate_tokenized_sequences(batch_size)
                 if raise_at_epoch_end:
                     raise StopIteration(
                         f"Ran out of tokens in dataset after {self.n_dataset_processed} samples, beginning the next epoch."
@@ -509,25 +539,23 @@ class ActivationsStore:
 
         n_batches, n_context = layerwise_activations.shape[:2]
 
-        stacked_activations = torch.zeros((n_batches, n_context, self.d_in))
-
         if self.hook_head_index is not None:
-            stacked_activations[:, :] = layerwise_activations[
+            stacked_activations = layerwise_activations[
                 :, :, self.hook_head_index
             ]
         elif layerwise_activations.ndim > 3:  # if we have a head dimension
             try:
-                stacked_activations[:, :] = layerwise_activations.view(
+                stacked_activations = layerwise_activations.view(
                     n_batches, n_context, -1
                 )
             except RuntimeError as e:
                 logger.error(f"Error during view operation: {e}")
                 logger.info("Attempting to use reshape instead...")
-                stacked_activations[:, :] = layerwise_activations.reshape(
+                stacked_activations = layerwise_activations.reshape(
                     n_batches, n_context, -1
                 )
         else:
-            stacked_activations[:, :] = layerwise_activations
+            stacked_activations = layerwise_activations
 
         return stacked_activations
 
@@ -617,12 +645,12 @@ class ActivationsStore:
         refill_iterator = range(0, total_size, batch_size)
         # Initialize empty tensor buffer of the maximum required size with an additional dimension for layers
         new_buffer_activations = torch.zeros(
-            (total_size, self.training_context_size, d_in),
+            (0, d_in),
             dtype=self.dtype,  # type: ignore
             device=self.device,
         )
         new_buffer_token_ids = torch.zeros(
-            (total_size, self.training_context_size),
+            (0),
             dtype=torch.long,
             device=self.device,
         )
@@ -637,17 +665,19 @@ class ActivationsStore:
             refill_activations = self.get_activations(refill_batch_tokens)
             # move acts back to cpu
             refill_activations.to(self.device)
-            new_buffer_activations[
-                refill_batch_idx_start : refill_batch_idx_start + batch_size, ...
-            ] = refill_activations
+            new_buffer_activations = torch.cat([new_buffer_activations, refill_activations])
+            # new_buffer_activations[
+            #     refill_batch_idx_start : refill_batch_idx_start + batch_size, ...
+            # ] = refill_activations
 
             # handle seqpos_slice, this is done for activations in get_activations
-            refill_batch_tokens = refill_batch_tokens[:, slice(*self.seqpos_slice)]
-            new_buffer_token_ids[
-                refill_batch_idx_start : refill_batch_idx_start + batch_size, ...
-            ] = refill_batch_tokens
+            # refill_batch_tokens = refill_batch_tokens[:, slice(*self.seqpos_slice)]
+            # new_buffer_token_ids[
+            #     refill_batch_idx_start : refill_batch_idx_start + batch_size, ...
+            # ] = refill_batch_tokens
 
         new_buffer_activations = new_buffer_activations.reshape(-1, d_in)
+        new_buffer_token_ids = np.zeros(new_buffer_activations.shape[0])
         new_buffer_token_ids = new_buffer_token_ids.reshape(-1)
         if shuffle:
             new_buffer_activations, new_buffer_token_ids = permute_together(
