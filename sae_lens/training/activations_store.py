@@ -343,7 +343,7 @@ class ActivationsStore:
         Helper to create an iterator which tokenizes raw text from the dataset on the fly
         """
         for row in self._iterate_raw_dataset():
-            yield torch.tensor(row)
+            yield torch.from_numpy(row)
             continue
             for x in row:
                 if x.dtype == np.float16:
@@ -612,16 +612,13 @@ class ActivationsStore:
                 total_size, context_size, d_in, raise_on_epoch_end
             )
 
+        new_activations = self.get_batch_tokens(raise_at_epoch_end=raise_on_epoch_end)
+        return new_activations[torch.randperm(new_activations.shape[0])], None
         refill_iterator = range(0, total_size, batch_size)
         # Initialize empty tensor buffer of the maximum required size with an additional dimension for layers
         new_buffer_activations = torch.zeros(
             (0, d_in),
             dtype=self.dtype,  # type: ignore
-            device=self.device,
-        )
-        new_buffer_token_ids = torch.zeros(
-            (0),
-            dtype=torch.long,
             device=self.device,
         )
 
@@ -647,16 +644,14 @@ class ActivationsStore:
             # ] = refill_batch_tokens
 
         new_buffer_activations = new_buffer_activations.reshape(-1, d_in)
-        new_buffer_token_ids = np.zeros(new_buffer_activations.shape[0])
-        new_buffer_token_ids = new_buffer_token_ids.reshape(-1)
         if shuffle:
-            new_buffer_activations, new_buffer_token_ids = permute_together(
-                [new_buffer_activations, new_buffer_token_ids]
+            new_buffer_activations = permute_together(
+                [new_buffer_activations]
             )
 
         return (
             new_buffer_activations,
-            new_buffer_token_ids,
+            None,
         )
 
     def get_filtered_buffer(
@@ -681,14 +676,14 @@ class ActivationsStore:
         while True:
             try:
                 yield self.get_filtered_buffer(
-                    self.half_buffer_size, raise_on_epoch_end=True
+                    self.n_batches_in_buffer, raise_on_epoch_end=True
                 )
             except StopIteration:
                 warnings.warn(
                     "All samples in the training dataset have been exhausted, beginning new epoch."
                 )
                 try:
-                    yield self.get_filtered_buffer(self.half_buffer_size)
+                    yield self.get_filtered_buffer(self.n_batches_in_buffer)
                 except StopIteration:
                     raise ValueError(
                         "Unable to fill buffer after starting new epoch. Dataset may be too small."

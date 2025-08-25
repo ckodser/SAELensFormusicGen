@@ -25,29 +25,15 @@ def mixing_buffer(
     storage_buffer: torch.Tensor | None = None
 
     for new_activations in activations_loader:
+        serving_batches = new_activations.shape[0] // batch_size
+        for i in range(serving_batches):
+            yield new_activations[i * batch_size : (i + 1) * batch_size]
+        new_activations = new_activations[serving_batches * batch_size:]
         storage_buffer = (
             new_activations
             if storage_buffer is None
             else torch.cat([storage_buffer, new_activations], dim=0)
         )
-
-        if storage_buffer.shape[0] >= buffer_size:
-            # Shuffle
-            storage_buffer = storage_buffer[torch.randperm(storage_buffer.shape[0])]
-
-            num_serving_batches = max(1, storage_buffer.shape[0] // (2 * batch_size))
-            serving_cutoff = num_serving_batches * batch_size
-            serving_buffer = storage_buffer[:serving_cutoff]
-            storage_buffer = storage_buffer[serving_cutoff:]
-
-            # Yield batches from the serving_buffer
-            for batch_idx in range(num_serving_batches):
-                yield serving_buffer[
-                    batch_idx * batch_size : (batch_idx + 1) * batch_size
-                ]
-
-    # If there are any remaining activations, yield them
-    if storage_buffer is not None:
-        remaining_batches = storage_buffer.shape[0] // batch_size
-        for i in range(remaining_batches):
+        serving_batches = storage_buffer.shape[0] // batch_size
+        for i in range(serving_batches):
             yield storage_buffer[i * batch_size : (i + 1) * batch_size]
