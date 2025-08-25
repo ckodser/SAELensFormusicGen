@@ -343,6 +343,8 @@ class ActivationsStore:
         Helper to create an iterator which tokenizes raw text from the dataset on the fly
         """
         for row in self._iterate_raw_dataset():
+            yield torch.tensor(row)
+            continue
             for x in row:
                 if x.dtype == np.float16:
                     yield torch.tensor(x, dtype=torch.float16)
@@ -477,7 +479,7 @@ class ActivationsStore:
                     )
                 sequences.append(next(self.iterable_sequences))
 
-        return torch.stack(sequences, dim=0).to(_get_model_device(self.model))
+        return torch.cat(sequences, dim=0).to(_get_model_device(self.model))
 
     @torch.no_grad()
     def get_activations(self, batch_tokens: torch.Tensor):
