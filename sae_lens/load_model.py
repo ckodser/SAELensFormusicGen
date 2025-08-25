@@ -206,13 +206,8 @@ class HookedProxyMG(HookedRootModule):
     A HookedRootModule that wraps a Huggingface MusicgenForConditionalGeneration.
     """
 
-    tokenizer: PreTrainedTokenizerBase
-    model: MusicgenForConditionalGeneration
-
-    def __init__(self, model: MusicgenForConditionalGeneration, processor: MusicgenProcessor):
+    def __init__(self):
         super().__init__()
-        self.model = model
-        self.processor = processor
         self.setup()
 
     # copied and modified from base HookedRootModule
@@ -220,18 +215,7 @@ class HookedProxyMG(HookedRootModule):
         self.mod_dict = {}
         self.named_modules_dict = {}
         self.hook_dict: dict[str, HookPoint] = {}
-        for name, module in self.model.named_modules():
-            if name == "":
-                continue
-
-            hook_point = HookPoint()
-            hook_point.name = name  # type: ignore
-
-            module.register_forward_hook(get_hook_fn(hook_point))
-
-            self.hook_dict[name] = hook_point
-            self.mod_dict[name] = hook_point
-            self.named_modules_dict[name] = module
+        return
 
     def get_caching_hooks(
         self,

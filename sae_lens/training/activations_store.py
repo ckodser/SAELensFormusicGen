@@ -272,23 +272,25 @@ class ActivationsStore:
         # Check if dataset is tokenized
         dataset_sample = next(iter(self.dataset))
 
-        # check if it's tokenized
-        if "tokens" in dataset_sample:
-            self.is_dataset_tokenized = True
-            self.tokens_column = "tokens"
-        elif "input_ids" in dataset_sample:
-            self.is_dataset_tokenized = True
-            self.tokens_column = "input_ids"
-        elif "text" in dataset_sample:
-            self.is_dataset_tokenized = False
-            self.tokens_column = "text"
-        elif "problem" in dataset_sample:
-            self.is_dataset_tokenized = False
-            self.tokens_column = "problem"
-        else:
-            raise ValueError(
-                "Dataset must have a 'tokens', 'input_ids', 'text', or 'problem' column."
-            )
+        # # check if it's tokenized
+        # if "tokens" in dataset_sample:
+        #     self.is_dataset_tokenized = True
+        #     self.tokens_column = "tokens"
+        # elif "input_ids" in dataset_sample:
+        #     self.is_dataset_tokenized = True
+        #     self.tokens_column = "input_ids"
+        # elif "text" in dataset_sample:
+        #     self.is_dataset_tokenized = False
+        #     self.tokens_column = "text"
+        # elif "problem" in dataset_sample:
+        #     self.is_dataset_tokenized = False
+        #     self.tokens_column = "problem"
+        # else:
+        #     raise ValueError(
+        #         "Dataset must have a 'tokens', 'input_ids', 'text', or 'problem' column."
+        #     )
+        self.is_dataset_tokenized = False
+        self.tokens_column = "activations.npy"
         if self.is_dataset_tokenized:
             ds_context_size = len(dataset_sample[self.tokens_column])  # type: ignore
             if ds_context_size < self.context_size:
@@ -319,7 +321,7 @@ class ActivationsStore:
                 "Dataset is not tokenized. Pre-tokenizing will improve performance and allows for more control over special tokens. See https://jbloomaus.github.io/SAELens/training_saes/#pretokenizing-datasets for more info."
             )
 
-        self.iterable_sequences = self._iterate_tokenized_sequences(self.store_batch_size_prompts)
+        self.iterable_sequences = self._iterate_tokenized_sequences()
 
         self.cached_activation_dataset = self.load_cached_activation_dataset()
 
@@ -336,43 +338,18 @@ class ActivationsStore:
             yield row[self.tokens_column]  # type: ignore
             self.n_dataset_processed += 1
 
-    def _iterate_raw_dataset_tokens(self, batch_size: int) -> Generator[torch.Tensor, None, None]:
+    def _iterate_raw_dataset_tokens(self) -> Generator[torch.Tensor, None, None]:
         """
         Helper to create an iterator which tokenizes raw text from the dataset on the fly
         """
-        batch = []
         for row in self._iterate_raw_dataset():
-            batch.append(row)
-            if len(batch) >= batch_size:
-                yield self.model.to_tokens(
-                    batch,
-                    truncate=False,
-                    move_to_device=False,  # we move to device below
-                    prepend_bos=False,
-                ).to(self.device)
-                batch.clear()
-                # tokens = (
-                #     self.model.to_tokens(
-                #         row,
-                #         truncate=False,
-                #         move_to_device=False,  # we move to device below
-                #         prepend_bos=False,
-                #     )  # type: ignore
-                #     .squeeze(0)
-                #     .to(self.device)
-                # )
-                # if len(tokens.shape) != 1:
-                #     raise ValueError(f"tokens.shape should be 1D but was {tokens.shape}")
-                # yield tokens
-        if batch:
-            yield self.model.to_tokens(
-                batch,
-                truncate=False,
-                move_to_device=False,  # we move to device below
-                prepend_bos=False,
-            ).to(self.device)
+            for x in row:
+                if x.dtype == np.float16:
+                    yield torch.tensor(x, dtype=torch.float16)
+                else:
+                    yield torch.tensor(x, dtype=torch.float32)
 
-    def _iterate_tokenized_sequences(self, batch_size: int) -> Generator[torch.Tensor, None, None]:
+    def _iterate_tokenized_sequences(self) -> Generator[torch.Tensor, None, None]:
         """
         Generator which iterates over full sequence of context_size tokens
         """
@@ -390,12 +367,12 @@ class ActivationsStore:
                 )
         # If the dataset isn't tokenized, we'll tokenize, concat, and batch on the fly
         else:
-            tokenizer = getattr(self.model, "tokenizer", None)
-            bos_token_id = None if tokenizer is None else tokenizer.bos_token_id
 
-            yield from self._iterate_raw_dataset_tokens(batch_size)
+            yield from self._iterate_raw_dataset_tokens()
             return
 
+            tokenizer = getattr(self.model, "tokenizer", None)
+            bos_token_id = None if tokenizer is None else tokenizer.bos_token_id
             yield from concat_and_batch_sequences(
                 tokens_iterator=self._iterate_raw_dataset_tokens(),
                 context_size=self.context_size,
@@ -487,22 +464,13 @@ class ActivationsStore:
         """
         if not batch_size:
             batch_size = self.store_batch_size_prompts
-        while True:
-            try:
-                return next(self.iterable_sequences)
-            except StopIteration:
-                self.iterable_sequences = self._iterate_tokenized_sequences(batch_size)
-                if raise_at_epoch_end:
-                    raise StopIteration(
-                        f"Ran out of tokens in dataset after {self.n_dataset_processed} samples, beginning the next epoch."
-                    )
         sequences = []
         # the sequences iterator yields fully formed tokens of size context_size, so we just need to cat these into a batch
         for _ in range(batch_size):
             try:
                 sequences.append(next(self.iterable_sequences))
             except StopIteration:
-                self.iterable_sequences = self._iterate_tokenized_sequences(batch_size)
+                self.iterable_sequences = self._iterate_tokenized_sequences()
                 if raise_at_epoch_end:
                     raise StopIteration(
                         f"Ran out of tokens in dataset after {self.n_dataset_processed} samples, beginning the next epoch."
@@ -659,10 +627,10 @@ class ActivationsStore:
             refill_iterator, leave=False, desc="Refilling buffer"
         ):
             # move batch toks to gpu for model
-            refill_batch_tokens = self.get_batch_tokens(
+            refill_activations = self.get_batch_tokens(
                 raise_at_epoch_end=raise_on_epoch_end
-            ).to(_get_model_device(self.model))
-            refill_activations = self.get_activations(refill_batch_tokens)
+            )
+            # refill_activations = self.get_activations(refill_batch_tokens)
             # move acts back to cpu
             refill_activations = refill_activations.to(self.device)
             new_buffer_activations = torch.cat([new_buffer_activations, refill_activations])
@@ -786,6 +754,8 @@ def validate_pretokenized_dataset_tokenizer(
 
 
 def _get_model_device(model: HookedRootModule) -> torch.device:
+    if isinstance(model, dict):
+        return model["device"]
     if hasattr(model, "W_E"):
         return model.W_E.device  # type: ignore
     if hasattr(model, "cfg") and hasattr(model.cfg, "device"):
