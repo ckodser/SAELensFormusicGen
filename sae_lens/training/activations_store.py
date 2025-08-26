@@ -468,7 +468,7 @@ class ActivationsStore:
             batch_size = self.store_batch_size_prompts
         sequences = []
         # the sequences iterator yields fully formed tokens of size context_size, so we just need to cat these into a batch
-        for _ in range(batch_size):
+        for _ in tqdm(range(batch_size), leave=False, desc="Refilling buffer", total=batch_size):
             try:
                 sequences.append(next(self.iterable_sequences))
             except StopIteration:
