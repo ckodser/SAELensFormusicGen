@@ -27,7 +27,7 @@ def mixing_buffer(
     for new_activations in activations_loader:
         serving_batches = new_activations.shape[0] // batch_size
         for i in range(serving_batches):
-            yield new_activations[i * batch_size : (i + 1) * batch_size]
+            yield new_activations[i * batch_size : (i + 1) * batch_size].float()
         new_activations = new_activations[serving_batches * batch_size:]
         storage_buffer = (
             new_activations
@@ -36,4 +36,4 @@ def mixing_buffer(
         )
         serving_batches = storage_buffer.shape[0] // batch_size
         for i in range(serving_batches):
-            yield storage_buffer[i * batch_size : (i + 1) * batch_size]
+            yield storage_buffer[i * batch_size : (i + 1) * batch_size].float()
