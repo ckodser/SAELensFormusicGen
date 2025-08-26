@@ -480,7 +480,7 @@ class ActivationsStore:
                     )
                 sequences.append(next(self.iterable_sequences))
 
-        return torch.cat(sequences, dim=0).to(_get_model_device(self.model))
+        return torch.stack(sequences, dim=0).to(_get_model_device(self.model))
 
     @torch.no_grad()
     def get_activations(self, batch_tokens: torch.Tensor):
