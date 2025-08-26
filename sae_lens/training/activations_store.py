@@ -335,7 +335,8 @@ class ActivationsStore:
         """
         for row in self.dataset:
             # typing datasets is difficult
-            yield row[self.tokens_column]  # type: ignore
+            yield row
+            # yield row[self.tokens_column]  # type: ignore
             self.n_dataset_processed += 1
 
     def _iterate_raw_dataset_tokens(self) -> Generator[torch.Tensor, None, None]:
