@@ -65,7 +65,7 @@ class LLMSaeEvaluator(Generic[T_TRAINING_SAE]):
             batch_size_prompts=self.eval_batch_size_prompts,
             n_eval_reconstruction_batches=self.n_eval_batches,
             n_eval_sparsity_variance_batches=self.n_eval_batches,
-            compute_ce_loss=True,
+            # compute_ce_loss=True,
             compute_l2_norms=True,
             compute_sparsity_metrics=True,
             compute_variance_metrics=True,
@@ -167,14 +167,13 @@ class LanguageModelSAETrainingRunner:
                 id=self.cfg.logger.wandb_id,
             )
 
-        evaluator = None
-        # evaluator = LLMSaeEvaluator(
-        #     model=self.model,
-        #     activations_store=self.activations_store,
-        #     eval_batch_size_prompts=self.cfg.eval_batch_size_prompts,
-        #     n_eval_batches=self.cfg.n_eval_batches,
-        #     model_kwargs=self.cfg.model_kwargs,
-        # )
+        evaluator = LLMSaeEvaluator(
+            model=self.model,
+            activations_store=self.activations_store,
+            eval_batch_size_prompts=self.cfg.eval_batch_size_prompts,
+            n_eval_batches=self.cfg.n_eval_batches,
+            model_kwargs=self.cfg.model_kwargs,
+        )
 
         trainer = SAETrainer(
             sae=self.sae,

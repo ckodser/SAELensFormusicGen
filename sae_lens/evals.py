@@ -440,23 +440,17 @@ def get_sparsity_and_variance_metrics(
         flattened_mask = mask.flatten()
 
         # get cache
-        _, cache = model.run_with_cache(
-            batch_tokens,
-            prepend_bos=False,
-            names_filter=[hook_name],
-            stop_at_layer=extract_stop_at_layer_from_tlens_hook_name(hook_name),
-            **model_kwargs,
-        )
+        # _, cache = model.run_with_cache(
+        #     batch_tokens,
+        #     prepend_bos=False,
+        #     names_filter=[hook_name],
+        #     stop_at_layer=extract_stop_at_layer_from_tlens_hook_name(hook_name),
+        #     **model_kwargs,
+        # )
 
         # we would include hook z, except that we now have base SAE's
         # which will do their own reshaping for hook z.
-        has_head_dim_key_substrings = ["hook_q", "hook_k", "hook_v", "hook_z"]
-        if hook_head_index is not None:
-            original_act = cache[hook_name][:, :, hook_head_index]
-        elif any(substring in hook_name for substring in has_head_dim_key_substrings):
-            original_act = cache[hook_name].flatten(-2, -1)
-        else:
-            original_act = cache[hook_name]
+        original_act = batch_tokens
 
         # normalise if necessary (necessary in training only, otherwise we should fold the scaling in)
         original_act_scaled = activation_scaler.scale(original_act)
@@ -466,28 +460,26 @@ def get_sparsity_and_variance_metrics(
         sae_out_scaled = sae.decode(sae_feature_activations).to(
             original_act_scaled.device
         )
-        del cache
 
         sae_out = activation_scaler.unscale(sae_out_scaled)
 
-        flattened_sae_input = einops.rearrange(original_act, "b ctx d -> (b ctx) d")
-        flattened_sae_feature_acts = einops.rearrange(
-            sae_feature_activations, "b ctx d -> (b ctx) d"
-        )
-        flattened_sae_out = einops.rearrange(sae_out, "b ctx d -> (b ctx) d")
+        # flattened_sae_input = einops.rearrange(original_act, "b ctx d -> (b ctx) d")
+        flattened_sae_input = original_act
+        flattened_sae_feature_acts = sae_feature_activations
+        flattened_sae_out = sae_out
 
         # TODO: Clean this up.
         # apply mask
-        masked_sae_feature_activations = sae_feature_activations * mask.unsqueeze(-1)
-        flattened_sae_input = flattened_sae_input[
-            flattened_mask.to(flattened_sae_input.device)
-        ]
-        flattened_sae_feature_acts = flattened_sae_feature_acts[
-            flattened_mask.to(flattened_sae_feature_acts.device)
-        ]
-        flattened_sae_out = flattened_sae_out[
-            flattened_mask.to(flattened_sae_out.device)
-        ]
+        masked_sae_feature_activations = sae_feature_activations
+        # flattened_sae_input = flattened_sae_input[
+        #     flattened_mask.to(flattened_sae_input.device)
+        # ]
+        # flattened_sae_feature_acts = flattened_sae_feature_acts[
+        #     flattened_mask.to(flattened_sae_feature_acts.device)
+        # ]
+        # flattened_sae_out = flattened_sae_out[
+        #     flattened_mask.to(flattened_sae_out.device)
+        # ]
 
         if compute_l2_norms:
             l2_norm_in = torch.norm(flattened_sae_input, dim=-1)
