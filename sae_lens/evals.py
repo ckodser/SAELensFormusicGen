@@ -514,7 +514,7 @@ def get_sparsity_and_variance_metrics(
                 (flattened_sae_input - flattened_sae_out).pow(2).sum(dim=-1)
             )
 
-            mse = resid_sum_of_squares / flattened_mask.sum()
+            mse = resid_sum_of_squares
             # Explained variance (old, incorrect, formula)
             batched_variance_sum = (
                 (flattened_sae_input - flattened_sae_input.mean(dim=0))
