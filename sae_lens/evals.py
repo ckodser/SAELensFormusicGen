@@ -464,9 +464,9 @@ def get_sparsity_and_variance_metrics(
         sae_out = activation_scaler.unscale(sae_out_scaled)
 
         # flattened_sae_input = einops.rearrange(original_act, "b ctx d -> (b ctx) d")
-        flattened_sae_input = original_act
+        flattened_sae_input = original_act_scaled
         flattened_sae_feature_acts = sae_feature_activations
-        flattened_sae_out = sae_out
+        flattened_sae_out = sae_out_scaled
 
         # TODO: Clean this up.
         # apply mask
@@ -514,7 +514,7 @@ def get_sparsity_and_variance_metrics(
                 (flattened_sae_input - flattened_sae_out).pow(2).sum(dim=-1)
             )
 
-            mse = (original_act_scaled - sae_out_scaled).pow(2).sum(dim=-1)
+            mse = resid_sum_of_squares
             # Explained variance (old, incorrect, formula)
             batched_variance_sum = (
                 (flattened_sae_input - flattened_sae_input.mean(dim=0))
