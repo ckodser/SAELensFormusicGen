@@ -37,3 +37,4 @@ def mixing_buffer(
         serving_batches = storage_buffer.shape[0] // batch_size
         for i in range(serving_batches):
             yield storage_buffer[i * batch_size : (i + 1) * batch_size].float()
+        storage_buffer = storage_buffer[serving_batches * batch_size:]
